@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 주식 분석 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .loading {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 min-h-screen">
+    <div class="max-w-7xl mx-auto p-6">
+        <!-- 헤더 -->
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-white mb-2 flex items-center justify-center gap-3">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                </svg>
+                AI 주식 분석 대시보드
+            </h1>
+            <p class="text-blue-200">실시간 데이터 · 재무제표 · AI 예측</p>
+        </div>
+
+        <!-- 검색 바 -->
+        <div class="bg-white/10 backdrop-blur-lg rounded-2xl p-6 mb-6 border border-white/20">
+            <div class="flex gap-4">
+                <input
+                    type="text"
+                    id="stockInput"
+                    placeholder="종목 코드 입력 (예: AAPL, TSLA, MSFT, 005930.KS)"
+                    class="flex-1 px-4 py-3 rounded-xl bg-white/20 text-white placeholder-blue-200 border border-white/30 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+                <button
+                    id="searchBtn"
+                    class="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold transition-all flex items-center gap-2"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    분석하기
+                </button>
+            </div>
+            <div id="errorMsg" class="hidden mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-200"></div>
+            <div class="mt-3 text-blue-200 text-sm">
+                💡 실시간 데이터: 미국 주식(AAPL, GOOGL, MSFT), 한국 주식(005930.KS, 000660.KS) 등
+            </div>
+        </div>
+
+        <!-- 로딩 표시 -->
+        <div id="loadingDiv" class="hidden text-center py-20">
+            <div class="loading text-6xl mb-4">⏳</div>
+            <h2 class="text-2xl font-bold text-white mb-2">실시간 데이터를 가져오는 중...</h2>
+            <p class="text-blue-200">AI가 분석하고 있습니다</p>
+        </div>
+
+        <!-- 시작 화면 -->
+        <div id="startDiv" class="text-center py-20">
+            <svg class="w-20 h-20 text-blue-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+            </svg>
+            <h2 class="text-2xl font-bold text-white mb-2">종목을 검색하여 시작하세요</h2>
+            <p class="text-blue-200">실시간 데이터, 재무제표, AI 분석을 한눈에 확인하세요</p>
+        </div>
+
+        <!-- 결과 화면 -->
+        <div id="resultDiv" class="hidden">
+            <!-- 주요 지표 카드 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                    <div class="text-blue-200 text-sm mb-2">현재가</div>
+                    <div id="currentPrice" class="text-3xl font-bold text-white">-</div>
+                    <div id="priceChange" class="text-sm mt-1">-</div>
+                </div>
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                    <div class="text-blue-200 text-sm mb-2">거래량</div>
+                    <div id="volume" class="text-2xl font-bold text-white">-</div>
+                    <div class="text-sm text-blue-200 mt-1">주</div>
+                </div>
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                    <div class="text-blue-200 text-sm mb-2">시가총액</div>
+                    <div id="marketCap" class="text-2xl font-bold text-white">-</div>
+                    <div id="pe" class="text-sm text-blue-200 mt-1">-</div>
+                </div>
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
+                    <div class="text-blue-200 text-sm mb-2">배당수익률</div>
+                    <div id="dividend" class="text-2xl font-bold text-white">-</div>
+                    <div class="text-sm text-blue-200 mt-1">연간</div>
+                </div>
+            </div>
+
+            <!-- 탭 네비게이션 -->
+            <div class="bg-white/10 backdrop-blur-lg rounded-t-2xl border-t border-x border-white/20">
+                <div class="flex gap-1 p-2">
+                    <button onclick="showTab('chart')" id="chartTab" class="flex-1 px-4 py-3 rounded-xl font-semibold transition-all bg-blue-500 text-white">
+                        📈 가격 차트
+                    </button>
+                    <button onclick="showTab('financial')" id="financialTab" class="flex-1 px-4 py-3 rounded-xl font-semibold transition-all text-blue-200 hover:bg-white/10">
+                        📊 재무제표
+                    </button>
+                    <button onclick="showTab('ai')" id="aiTab" class="flex-1 px-4 py-3 rounded-xl font-semibold transition-all text-blue-200 hover:bg-white/10">
+                        🤖 AI 분석
+                    </button>
+                </div>
+            </div>
+
+            <!-- 탭 컨텐츠 -->
+            <div class="bg-white/10 backdrop-blur-lg rounded-b-2xl border-b border-x border-white/20 p-6">
+                <!-- 차트 탭 -->
+                <div id="chartContent" class="tab-content">
+                    <h3 class="text-xl font-bold text-white mb-4">30일 가격 추이</h3>
+                    <canvas id="priceChart" class="w-full" style="max-height: 400px;"></canvas>
+                    <h3 class="text-xl font-bold text-white mb-4 mt-8">거래량</h3>
+                    <canvas id="volumeChart" class="w-full" style="max-height: 200px;"></canvas>
+                </div>
+
+                <!-- 재무제표 탭 -->
+                <div id="financialContent" class="tab-content hidden">
+                    <h3 class="text-xl font-bold text-white mb-4">분기별 실적</h3>
+                    <canvas id="financialChart" class="w-full" style="max-height: 400px;"></canvas>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                        <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                            <div class="text-blue-200 text-sm mb-1">총자산</div>
+                            <div id="totalAssets" class="text-2xl font-bold text-white">-</div>
+                        </div>
+                        <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                            <div class="text-blue-200 text-sm mb-1">부채총계</div>
+                            <div id="totalLiabilities" class="text-2xl font-bold text-white">-</div>
+                        </div>
+                        <div class="bg-white/5 rounded-xl p-4 border border-white/10">
+                            <div class="text-blue-200 text-sm mb-1">자본총계</div>
+                            <div id="equity" class="text-2xl font-bold text-white">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI 분석 탭 -->
+                <div id="aiContent" class="tab-content hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-xl p-6 border border-blue-400/30">
+                            <h3 class="text-xl font-bold text-white mb-4">AI 투자 의견</h3>
+                            <div id="recommendation" class="text-4xl font-bold mb-2">-</div>
+                            <div class="text-blue-200 mb-4">
+                                목표가: <span id="targetPrice" class="text-white font-bold">-</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-blue-200">신뢰도:</span>
+                                <div class="flex-1 bg-white/20 rounded-full h-3">
+                                    <div id="confidenceBar" class="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all" style="width: 0%"></div>
+                                </div>
+                                <span id="confidence" class="text-white font-bold">-/10</span>
+                            </div>
+                        </div>
+                        <div class="bg-white/5 rounded-xl p-6 border border-white/10">
+                            <h3 class="text-xl font-bold text-white mb-4">분석 근거</h3>
+                            <ul id="reasons" class="space-y-2"></ul>
+                        </div>
+                    </div>
+                    <div class="mt-6 bg-red-500/10 border border-red-500/30 rounded-xl p-6">
+                        <h3 class="text-xl font-bold text-red-300 mb-3">⚠️ 주의사항 및 리스크</h3>
+                        <ul id="risks" class="space-y-2"></ul>
+                        <p class="text-red-200 text-sm mt-4 italic">
+                            * 본 분석은 AI 기반 예측이며 투자 결정의 참고용으로만 사용하세요. 실제 투자 시 전문가와 상담하시기 바랍니다.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 백엔드 API URL (배포 후 실제 URL로 변경)
+        const API_URL = 'http://localhost:5000';  // 로컬 테스트용
+        // const API_URL = 'https://your-app.railway.app';  // 배포 후 사용
+
+        let charts = {};
+        let stockData = null;
+
+        // 탭 전환
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('[id$="Tab"]').forEach(el => {
+                el.classList.remove('bg-blue-500', 'text-white');
+                el.classList.add('text-blue-200', 'hover:bg-white/10');
+            });
+            
+            document.getElementById(tabName + 'Content').classList.remove('hidden');
+            document.getElementById(tabName + 'Tab').classList.add('bg-blue-500', 'text-white');
+            document.getElementById(tabName + 'Tab').classList.remove('text-blue-200', 'hover:bg-white/10');
+        }
+
+        // 오류 표시
+        function showError(msg) {
+            const errorDiv = document.getElementById('errorMsg');
+            errorDiv.textContent = msg;
+            errorDiv.classList.remove('hidden');
+            setTimeout(() => errorDiv.classList.add('hidden'), 5000);
+        }
+
+        // 차트 그리기
+        function drawCharts() {
+            if (!stockData) return;
+
+            // 기존 차트 삭제
+            Object.values(charts).forEach(chart => chart.destroy());
+            charts = {};
+
+            // 가격 차트
+            const priceCtx = document.getElementById('priceChart').getContext('2d');
+            charts.price = new Chart(priceCtx, {
+                type: 'line',
+                data: {
+                    labels: stockData.chartData.map(d => d.date),
+                    datasets: [{
+                        label: '가격',
+                        data: stockData.chartData.map(d => d.price),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#93c5fd' } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#93c5fd' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                        y: { ticks: { color: '#93c5fd' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                    }
+                }
+            });
+
+            // 거래량 차트
+            const volumeCtx = document.getElementById('volumeChart').getContext('2d');
+            charts.volume = new Chart(volumeCtx, {
+                type: 'bar',
+                data: {
+                    labels: stockData.chartData.map(d => d.date),
+                    datasets: [{
+                        label: '거래량',
+                        data: stockData.chartData.map(d => d.volume),
+                        backgroundColor: '#60a5fa'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { labels: { color: '#93c5fd' } }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#93c5fd' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                        y: { ticks: { color: '#93c5fd' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                    }
+                }
+            });
+
+            // 재무 차트
+            if (stockData.financial) {
+                const financialCtx = document.getElementById('financialChart').getContext('2d');
+                charts.financial = new Chart(financialCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Q1', 'Q2', 'Q3', 'Q4'],
+                        datasets: [
+                            {
+                                label: '매출',
+                                data: stockData.financial.revenue,
+                                backgroundColor: '#3b82f6'
+                            },
+                            {
+                                label: '순이익',
+                                data: stockData.financial.netIncome,
+                                backgroundColor: '#10b981'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { labels: { color: '#93c5fd' } }
+                        },
+                        scales: {
+                            x: { ticks: { color: '#93c5fd' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                            y: { ticks: { color: '#93c5fd' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                        }
+                    }
+                });
+            }
+        }
+
+        // UI 업데이트
+        function updateUI() {
+            if (!stockData) return;
+
+            // 주요 지표
+            document.getElementById('currentPrice').textContent = '$' + stockData.currentPrice.toFixed(2);
+            
+            const changeColor = stockData.change >= 0 ? 'text-green-400' : 'text-red-400';
+            const changeSymbol = stockData.change >= 0 ? '▲' : '▼';
+            document.getElementById('priceChange').innerHTML = 
+                `<span class="${changeColor}">${changeSymbol} ${Math.abs(stockData.change).toFixed(2)} (${Math.abs(stockData.changePercent).toFixed(2)}%)</span>`;
+            
+            document.getElementById('volume').textContent = stockData.volume?.toLocaleString() || '-';
+            document.getElementById('marketCap').textContent = stockData.marketCap || '-';
+            document.getElementById('pe').textContent = 'PER: ' + (stockData.pe || '-');
+            document.getElementById('dividend').textContent = (stockData.dividendYield || '0') + '%';
+
+            // 재무제표
+            if (stockData.financial) {
+                document.getElementById('totalAssets').textContent = 
+                    '$' + (stockData.financial.totalAssets / 1000000).toFixed(1) + 'M';
+                document.getElementById('totalLiabilities').textContent = 
+                    '$' + (stockData.financial.totalLiabilities / 1000000).toFixed(1) + 'M';
+                document.getElementById('equity').textContent = 
+                    '$' + (stockData.financial.equity / 1000000).toFixed(1) + 'M';
+            }
+
+            // AI 분석
+            if (stockData.aiAnalysis) {
+                const rec = stockData.aiAnalysis.recommendation;
+                const recColor = rec === '매수' ? 'text-green-400' : rec === '매도' ? 'text-red-400' : 'text-yellow-400';
+                document.getElementById('recommendation').innerHTML = `<span class="${recColor}">${rec}</span>`;
+                document.getElementById('targetPrice').textContent = '$' + stockData.aiAnalysis.targetPrice;
+                document.getElementById('confidence').textContent = stockData.aiAnalysis.confidence + '/10';
+                document.getElementById('confidenceBar').style.width = (stockData.aiAnalysis.confidence * 10) + '%';
+
+                const reasonsList = document.getElementById('reasons');
+                reasonsList.innerHTML = '';
+                stockData.aiAnalysis.reasons.forEach(reason => {
+                    const li = document.createElement('li');
+                    li.className = 'flex items-start gap-2 text-blue-100';
+                    li.innerHTML = `<span class="text-green-400 mt-1">✓</span><span>${reason}</span>`;
+                    reasonsList.appendChild(li);
+                });
+
+                const risksList = document.getElementById('risks');
+                risksList.innerHTML = '';
+                stockData.aiAnalysis.risks.forEach(risk => {
+                    const li = document.createElement('li');
+                    li.className = 'flex items-start gap-2 text-red-200';
+                    li.innerHTML = `<span class="text-red-400 mt-1">⚠</span><span>${risk}</span>`;
+                    risksList.appendChild(li);
+                });
+            }
+
+            drawCharts();
+        }
+
+        // 주식 데이터 조회
+        async function fetchStockData() {
+            const symbol = document.getElementById('stockInput').value.trim().toUpperCase();
+            
+            if (!symbol) {
+                showError('종목 코드를 입력해주세요');
+                return;
+            }
+
+            document.getElementById('startDiv').classList.add('hidden');
+            document.getElementById('resultDiv').classList.add('hidden');
+            document.getElementById('loadingDiv').classList.remove('hidden');
+
+            try {
+                const response = await fetch(`${API_URL}/api/stock/${symbol}`);
+                
+                if (!response.ok) {
+                    throw new Error('종목을 찾을 수 없습니다');
+                }
+
+                stockData = await response.json();
+
+                document.getElementById('loadingDiv').classList.add('hidden');
+                document.getElementById('resultDiv').classList.remove('hidden');
+                updateUI();
+
+            } catch (err) {
+                console.error(err);
+                showError(err.message || '데이터를 불러오는데 실패했습니다');
+                document.getElementById('loadingDiv').classList.add('hidden');
+                document.getElementById('startDiv').classList.remove('hidden');
+            }
+        }
+
+        // 이벤트 리스너
+        document.getElementById('searchBtn').addEventListener('click', fetchStockData);
+        document.getElementById('stockInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') fetchStockData();
+        });
+    </script>
+</body>
+</html>
