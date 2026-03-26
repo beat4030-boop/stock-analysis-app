@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>키움증권 자동매매 대시보드</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pulse { animation: pulse 2s ease-in-out infinite; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 min-h-screen text-white">
+    <div class="max-w-7xl mx-auto p-4">
+
+        <!-- 헤더 -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-3xl font-bold flex items-center gap-3">
+                    <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                    </svg>
+                    키움증권 자동매매
+                </h1>
+                <p class="text-blue-300 text-sm mt-1">REST API 기반 자동 트레이딩 시스템</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="botStatusBadge" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600">
+                    대기 중
+                </span>
+                <a href="index.html" class="text-blue-300 hover:text-white text-sm underline">분석 대시보드</a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+            <!-- 왼쪽: 설정 패널 -->
+            <div class="space-y-4">
+
+                <!-- 감시 종목 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <h2 class="text-lg font-bold mb-3">감시 종목</h2>
+                    <div class="flex gap-2 mb-3">
+                        <input id="stockCodeInput" type="text" placeholder="종목코드 (예: 005930)"
+                            class="flex-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"/>
+                        <button onclick="addStock()" class="px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg text-sm font-semibold">추가</button>
+                    </div>
+                    <div id="watchlist" class="space-y-2 max-h-40 overflow-y-auto scrollbar-thin"></div>
+                    <div class="mt-2 text-xs text-blue-300">
+                        삼성전자: 005930 / SK하이닉스: 000660 / NAVER: 035420
+                    </div>
+                </div>
+
+                <!-- 전략 선택 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <h2 class="text-lg font-bold mb-3">매매 전략</h2>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer">
+                            <input type="checkbox" value="golden_cross" class="strategy-cb accent-blue-500" checked>
+                            <div>
+                                <div class="font-semibold text-sm">이동평균 크로스</div>
+                                <div class="text-xs text-blue-300">5일/20일 이동평균 골든/데드크로스</div>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer">
+                            <input type="checkbox" value="rsi" class="strategy-cb accent-blue-500" checked>
+                            <div>
+                                <div class="font-semibold text-sm">RSI</div>
+                                <div class="text-xs text-blue-300">RSI 30 이하 매수 / 70 이상 매도</div>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer">
+                            <input type="checkbox" value="bollinger" class="strategy-cb accent-blue-500">
+                            <div>
+                                <div class="font-semibold text-sm">볼린저 밴드</div>
+                                <div class="text-xs text-blue-300">밴드 하단 매수 / 상단 매도</div>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer">
+                            <input type="checkbox" value="volatility_breakout" class="strategy-cb accent-blue-500">
+                            <div>
+                                <div class="font-semibold text-sm">변동성 돌파</div>
+                                <div class="text-xs text-blue-300">래리 윌리엄스 변동성 돌파 (K=0.5)</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 리스크 관리 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <h2 class="text-lg font-bold mb-3">리스크 관리</h2>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs text-blue-300">1회 최대 매수 금액 (원)</label>
+                            <input id="maxBuyAmount" type="number" value="1000000"
+                                class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs text-blue-300">손절 (%)</label>
+                                <input id="stopLoss" type="number" value="-3" step="0.5"
+                                    class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                            </div>
+                            <div>
+                                <label class="text-xs text-blue-300">익절 (%)</label>
+                                <input id="takeProfit" type="number" value="5" step="0.5"
+                                    class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-blue-300">최대 보유 종목 수</label>
+                            <input id="maxHoldings" type="number" value="5"
+                                class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 실행 컨트롤 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <h2 class="text-lg font-bold mb-3">실행</h2>
+                    <div class="mb-3">
+                        <label class="text-xs text-blue-300">실행 주기 (초)</label>
+                        <input id="interval" type="number" value="60" min="10"
+                            class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="startBot()"
+                            class="px-4 py-3 bg-green-500 hover:bg-green-600 rounded-lg font-bold text-sm transition-all">
+                            자동매매 시작
+                        </button>
+                        <button onclick="stopBot()"
+                            class="px-4 py-3 bg-red-500 hover:bg-red-600 rounded-lg font-bold text-sm transition-all">
+                            중지
+                        </button>
+                    </div>
+                    <button onclick="runOnce()"
+                        class="w-full mt-2 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 rounded-lg font-semibold text-sm text-black transition-all">
+                        1회 수동 실행
+                    </button>
+                </div>
+            </div>
+
+            <!-- 중앙: 계좌/보유종목 -->
+            <div class="space-y-4">
+
+                <!-- 계좌 요약 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold">계좌 현황</h2>
+                        <button onclick="refreshBalance()" class="text-blue-300 hover:text-white text-sm">새로고침</button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-xs text-blue-300">총 평가금액</div>
+                            <div id="totalEval" class="text-2xl font-bold">-</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-blue-300">총 손익</div>
+                            <div id="totalProfit" class="text-2xl font-bold">-</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-blue-300">예수금</div>
+                            <div id="cash" class="text-xl font-bold">-</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-blue-300">보유 종목 수</div>
+                            <div id="holdingCount" class="text-xl font-bold">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 보유 종목 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <h2 class="text-lg font-bold mb-3">보유 종목</h2>
+                    <div id="holdings" class="space-y-2 max-h-80 overflow-y-auto scrollbar-thin">
+                        <div class="text-center text-blue-300 py-8 text-sm">계좌 정보를 불러오세요</div>
+                    </div>
+                </div>
+
+                <!-- 수동 주문 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <h2 class="text-lg font-bold mb-3">수동 주문</h2>
+                    <div class="space-y-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs text-blue-300">종목코드</label>
+                                <input id="orderCode" type="text" placeholder="005930"
+                                    class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                            </div>
+                            <div>
+                                <label class="text-xs text-blue-300">수량</label>
+                                <input id="orderQty" type="number" value="1"
+                                    class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="text-xs text-blue-300">가격 (0 = 시장가)</label>
+                            <input id="orderPrice" type="number" value="0"
+                                class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-sm mt-1"/>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="manualBuy()"
+                                class="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-lg font-semibold text-sm">매수</button>
+                            <button onclick="manualSell()"
+                                class="px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold text-sm">매도</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 오른쪽: 로그/이력 -->
+            <div class="space-y-4">
+
+                <!-- 실시간 로그 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <h2 class="text-lg font-bold mb-3">실시간 로그</h2>
+                    <div id="logs" class="space-y-1 max-h-60 overflow-y-auto scrollbar-thin font-mono text-xs">
+                        <div class="text-blue-300">시스템 대기 중...</div>
+                    </div>
+                </div>
+
+                <!-- 매매 이력 -->
+                <div class="bg-white/10 backdrop-blur-lg rounded-xl p-5 border border-white/20">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-bold">매매 이력</h2>
+                        <button onclick="refreshHistory()" class="text-blue-300 hover:text-white text-sm">새로고침</button>
+                    </div>
+                    <div id="tradeHistory" class="space-y-2 max-h-96 overflow-y-auto scrollbar-thin">
+                        <div class="text-center text-blue-300 py-8 text-sm">매매 이력이 없습니다</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 경고 문구 -->
+        <div class="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-center">
+            <p class="text-red-300 text-sm">
+                이 프로그램은 자동으로 실제 매매를 실행합니다. 반드시 <strong>모의투자</strong>로 충분히 테스트한 후 실전에 사용하세요.
+                투자 손실에 대한 책임은 사용자에게 있습니다.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:5000';
+        let watchlist = [];
+
+        // ─── 유틸 ──────────────────────────────────────────
+
+        function addLog(msg, type = 'info') {
+            const el = document.getElementById('logs');
+            const colors = { info: 'text-blue-200', buy: 'text-red-400', sell: 'text-blue-400', error: 'text-yellow-400', success: 'text-green-400' };
+            const time = new Date().toLocaleTimeString('ko-KR');
+            el.innerHTML = `<div class="${colors[type] || 'text-blue-200'}">[${time}] ${msg}</div>` + el.innerHTML;
+        }
+
+        function formatNum(n) {
+            if (n == null) return '-';
+            return Number(n).toLocaleString('ko-KR');
+        }
+
+        async function api(path, options = {}) {
+            try {
+                const resp = await fetch(API + path, {
+                    headers: { 'Content-Type': 'application/json' },
+                    ...options,
+                });
+                return await resp.json();
+            } catch (e) {
+                addLog(`API 오류: ${e.message}`, 'error');
+                return null;
+            }
+        }
+
+        // ─── 감시 종목 ────────────────────────────────────
+
+        function addStock() {
+            const input = document.getElementById('stockCodeInput');
+            const code = input.value.trim();
+            if (!code) return;
+            if (watchlist.includes(code)) {
+                addLog(`${code} 이미 추가됨`, 'error');
+                return;
+            }
+            watchlist.push(code);
+            input.value = '';
+            renderWatchlist();
+            addLog(`감시 종목 추가: ${code}`);
+        }
+
+        function removeStock(code) {
+            watchlist = watchlist.filter(c => c !== code);
+            renderWatchlist();
+            addLog(`감시 종목 제거: ${code}`);
+        }
+
+        function renderWatchlist() {
+            const el = document.getElementById('watchlist');
+            if (watchlist.length === 0) {
+                el.innerHTML = '<div class="text-blue-300 text-sm text-center py-2">종목을 추가하세요</div>';
+                return;
+            }
+            el.innerHTML = watchlist.map(code => `
+                <div class="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                    <span class="font-mono text-sm">${code}</span>
+                    <button onclick="removeStock('${code}')" class="text-red-400 hover:text-red-300 text-xs">삭제</button>
+                </div>
+            `).join('');
+        }
+
+        document.getElementById('stockCodeInput').addEventListener('keypress', e => {
+            if (e.key === 'Enter') addStock();
+        });
+
+        // ─── 봇 컨트롤 ───────────────────────────────────
+
+        async function configureBot() {
+            const strategies = [...document.querySelectorAll('.strategy-cb:checked')]
+                .map(cb => ({ name: cb.value, params: {} }));
+
+            return api('/api/bot/configure', {
+                method: 'POST',
+                body: JSON.stringify({
+                    watchlist,
+                    strategies,
+                    risk_params: {
+                        max_buy_amount: Number(document.getElementById('maxBuyAmount').value),
+                        stop_loss_rate: Number(document.getElementById('stopLoss').value),
+                        take_profit_rate: Number(document.getElementById('takeProfit').value),
+                        max_holdings: Number(document.getElementById('maxHoldings').value),
+                    },
+                }),
+            });
+        }
+
+        async function startBot() {
+            if (watchlist.length === 0) {
+                addLog('감시 종목을 추가하세요', 'error');
+                return;
+            }
+            const checked = document.querySelectorAll('.strategy-cb:checked');
+            if (checked.length === 0) {
+                addLog('전략을 선택하세요', 'error');
+                return;
+            }
+
+            await configureBot();
+
+            const interval = Number(document.getElementById('interval').value) || 60;
+            const result = await api('/api/bot/start', {
+                method: 'POST',
+                body: JSON.stringify({ interval_seconds: interval }),
+            });
+
+            if (result && !result.error) {
+                addLog(`자동매매 시작 (${interval}초 간격)`, 'success');
+                updateBotBadge(true);
+            } else {
+                addLog(`시작 실패: ${result?.error}`, 'error');
+            }
+        }
+
+        async function stopBot() {
+            const result = await api('/api/bot/stop', { method: 'POST' });
+            if (result && !result.error) {
+                addLog('자동매매 중지', 'info');
+                updateBotBadge(false);
+            }
+        }
+
+        async function runOnce() {
+            if (watchlist.length === 0) {
+                addLog('감시 종목을 추가하세요', 'error');
+                return;
+            }
+            await configureBot();
+            addLog('1회 수동 실행 중...', 'info');
+
+            const result = await api('/api/bot/run-once', { method: 'POST' });
+            if (result && result.results) {
+                result.results.forEach(r => {
+                    const type = r.action === 'buy' ? 'buy' : r.action === 'sell' ? 'sell' : 'info';
+                    addLog(`[${r.stock_code}] ${r.action} - ${r.message || r.reasons?.join(', ') || ''}`, type);
+                });
+                refreshBalance();
+                refreshHistory();
+            }
+        }
+
+        function updateBotBadge(running) {
+            const badge = document.getElementById('botStatusBadge');
+            if (running) {
+                badge.textContent = '실행 중';
+                badge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-green-500 pulse';
+            } else {
+                badge.textContent = '대기 중';
+                badge.className = 'px-3 py-1 rounded-full text-sm font-semibold bg-gray-600';
+            }
+        }
+
+        // ─── 계좌 ─────────────────────────────────────────
+
+        async function refreshBalance() {
+            addLog('잔고 조회 중...', 'info');
+            const data = await api('/api/balance');
+            if (!data || data.error) {
+                addLog(`잔고 조회 실패: ${data?.error || '연결 오류'}`, 'error');
+                return;
+            }
+
+            document.getElementById('totalEval').textContent = formatNum(data.total_eval) + '원';
+            document.getElementById('cash').textContent = formatNum(data.cash) + '원';
+            document.getElementById('holdingCount').textContent = data.holdings.length + '개';
+
+            const profitColor = data.total_profit >= 0 ? 'text-red-400' : 'text-blue-400';
+            document.getElementById('totalProfit').innerHTML =
+                `<span class="${profitColor}">${data.total_profit >= 0 ? '+' : ''}${formatNum(data.total_profit)}원</span>`;
+
+            const holdEl = document.getElementById('holdings');
+            if (data.holdings.length === 0) {
+                holdEl.innerHTML = '<div class="text-center text-blue-300 py-4 text-sm">보유 종목 없음</div>';
+            } else {
+                holdEl.innerHTML = data.holdings.map(h => {
+                    const plColor = h.profit_loss >= 0 ? 'text-red-400' : 'text-blue-400';
+                    return `
+                    <div class="bg-white/5 rounded-lg p-3">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="font-bold">${h.name}</span>
+                                <span class="text-xs text-blue-300 ml-2">${h.stock_code}</span>
+                            </div>
+                            <span class="${plColor} font-bold text-sm">${h.profit_rate >= 0 ? '+' : ''}${h.profit_rate.toFixed(2)}%</span>
+                        </div>
+                        <div class="flex justify-between text-xs text-blue-300 mt-1">
+                            <span>${h.qty}주 | 평균 ${formatNum(h.avg_price)}원</span>
+                            <span class="${plColor}">${h.profit_loss >= 0 ? '+' : ''}${formatNum(h.profit_loss)}원</span>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+            addLog('잔고 조회 완료', 'success');
+        }
+
+        // ─── 수동 주문 ───────────────────────────────────
+
+        async function manualBuy() {
+            const code = document.getElementById('orderCode').value.trim();
+            const qty = Number(document.getElementById('orderQty').value);
+            const price = Number(document.getElementById('orderPrice').value);
+            if (!code || qty <= 0) return addLog('종목코드와 수량을 확인하세요', 'error');
+
+            addLog(`매수 주문: ${code} ${qty}주 ${price ? formatNum(price) + '원' : '시장가'}`, 'buy');
+            const result = await api('/api/order/buy', {
+                method: 'POST',
+                body: JSON.stringify({ stock_code: code, qty, price }),
+            });
+            if (result && !result.error) {
+                addLog('매수 주문 완료', 'success');
+                refreshBalance();
+            } else {
+                addLog(`매수 실패: ${result?.error}`, 'error');
+            }
+        }
+
+        async function manualSell() {
+            const code = document.getElementById('orderCode').value.trim();
+            const qty = Number(document.getElementById('orderQty').value);
+            const price = Number(document.getElementById('orderPrice').value);
+            if (!code || qty <= 0) return addLog('종목코드와 수량을 확인하세요', 'error');
+
+            addLog(`매도 주문: ${code} ${qty}주 ${price ? formatNum(price) + '원' : '시장가'}`, 'sell');
+            const result = await api('/api/order/sell', {
+                method: 'POST',
+                body: JSON.stringify({ stock_code: code, qty, price }),
+            });
+            if (result && !result.error) {
+                addLog('매도 주문 완료', 'success');
+                refreshBalance();
+            } else {
+                addLog(`매도 실패: ${result?.error}`, 'error');
+            }
+        }
+
+        // ─── 매매 이력 ───────────────────────────────────
+
+        async function refreshHistory() {
+            const data = await api('/api/bot/history');
+            const el = document.getElementById('tradeHistory');
+
+            if (!data || data.length === 0) {
+                el.innerHTML = '<div class="text-center text-blue-300 py-4 text-sm">매매 이력이 없습니다</div>';
+                return;
+            }
+
+            el.innerHTML = [...data].reverse().map(t => {
+                const isBuy = t.action === 'buy';
+                const color = isBuy ? 'border-red-500/30 bg-red-500/5' : 'border-blue-500/30 bg-blue-500/5';
+                const badge = isBuy
+                    ? '<span class="px-2 py-0.5 bg-red-500 rounded text-xs font-bold">매수</span>'
+                    : '<span class="px-2 py-0.5 bg-blue-500 rounded text-xs font-bold">매도</span>';
+                const time = new Date(t.timestamp).toLocaleString('ko-KR');
+                return `
+                <div class="border ${color} rounded-lg p-3">
+                    <div class="flex items-center justify-between">
+                        ${badge}
+                        <span class="text-xs text-blue-300">${time}</span>
+                    </div>
+                    <div class="mt-2 text-sm">
+                        <span class="font-bold">${t.stock_code}</span>
+                        <span class="text-blue-300 ml-2">${t.qty}주 x ${formatNum(t.price)}원</span>
+                    </div>
+                    <div class="text-xs text-blue-300 mt-1">${t.reasons?.join(' / ') || ''}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // ─── 초기화 ──────────────────────────────────────
+
+        renderWatchlist();
+
+        // 봇 상태 주기적 확인
+        setInterval(async () => {
+            const status = await api('/api/bot/status');
+            if (status) {
+                updateBotBadge(status.is_running);
+            }
+        }, 10000);
+    </script>
+</body>
+</html>
