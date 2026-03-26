@@ -1,12 +1,17 @@
 """
-키움증권 REST API 클라이언트
-- OAuth 토큰 관리
+키움증권 REST API 클라이언트 (openapi.kiwoom.com)
+- OAuth 토큰 관리 (au10001)
 - 시세 조회 (현재가, 호가, 일봉/분봉)
-- 주문 (매수/매도/정정/취소)
+- 주문 (매수/매도)
 - 잔고 조회
+
+Base URL:
+  실전투자: https://api.kiwoom.com
+  모의투자: https://mockapi.kiwoom.com
 """
 
 import time
+import json
 import requests
 from config import Config
 
@@ -18,49 +23,59 @@ class KiwoomAPI:
         self.access_token = None
         self.token_expires_at = 0
 
-    # ─── 인증 ───────────────────────────────────────────────
+    # ─── 인증 (au10001) ─────────────────────────────────────
 
     def _get_token(self):
-        """OAuth 접근 토큰 발급"""
+        """접근토큰 발급 (au10001)"""
         if self.access_token and time.time() < self.token_expires_at - 60:
             return self.access_token
 
-        url = f"{self.base_url}/oauth2/tokenP"
+        url = f"{self.base_url}/oauth2/token"
+        headers = {
+            "Content-Type": "application/json;charset=UTF-8",
+        }
         body = {
             "grant_type": "client_credentials",
             "appkey": self.config.APP_KEY,
-            "appsecret": self.config.APP_SECRET,
+            "secretkey": self.config.SECRET_KEY,
         }
-        resp = requests.post(url, json=body, timeout=10)
+        resp = requests.post(url, headers=headers, data=json.dumps(body), timeout=10)
         resp.raise_for_status()
         data = resp.json()
 
-        self.access_token = data["access_token"]
-        self.token_expires_at = time.time() + data.get("expires_in", 86400)
+        self.access_token = data["token"]
+        # 토큰 유효기간: 24시간
+        self.token_expires_at = time.time() + 86400
         return self.access_token
 
-    def _headers(self, tr_id):
-        """공통 요청 헤더"""
+    def _headers(self, api_id):
+        """
+        공통 요청 헤더
+        :param api_id: API TR 코드 (예: ka10001, ka10080 등)
+        """
         token = self._get_token()
         return {
-            "content-type": "application/json; charset=utf-8",
+            "Content-Type": "application/json;charset=UTF-8",
             "authorization": f"Bearer {token}",
             "appkey": self.config.APP_KEY,
-            "appsecret": self.config.APP_SECRET,
-            "tr_id": tr_id,
+            "secretkey": self.config.SECRET_KEY,
+            "api-id": api_id,
         }
 
-    def _get(self, path, tr_id, params=None):
-        """GET 요청 헬퍼"""
+    def _get(self, path, api_id, params=None):
+        """GET 요청"""
         url = f"{self.base_url}{path}"
-        resp = requests.get(url, headers=self._headers(tr_id), params=params, timeout=10)
+        resp = requests.get(url, headers=self._headers(api_id), params=params, timeout=10)
         resp.raise_for_status()
         return resp.json()
 
-    def _post(self, path, tr_id, body=None):
-        """POST 요청 헬퍼"""
+    def _post(self, path, api_id, body=None):
+        """POST 요청"""
         url = f"{self.base_url}{path}"
-        resp = requests.post(url, headers=self._headers(tr_id), json=body, timeout=10)
+        resp = requests.post(
+            url, headers=self._headers(api_id),
+            data=json.dumps(body) if body else None, timeout=10
+        )
         resp.raise_for_status()
         return resp.json()
 
@@ -72,23 +87,21 @@ class KiwoomAPI:
         :param stock_code: 종목코드 (예: "005930")
         :return: 현재가 정보 dict
         """
-        tr_id = "FHKST01010100"
         params = {
-            "FID_COND_MRKT_DIV_CODE": "J",  # 주식
-            "FID_INPUT_ISCD": stock_code,
+            "stk_cd": stock_code,
         }
-        data = self._get("/uapi/domestic-stock/v1/quotations/inquire-price", tr_id, params)
-        output = data.get("output", {})
+        data = self._get("/api/dostk/stkinfo", "ka10001", params)
+        output = data.get("output", data)
         return {
             "stock_code": stock_code,
-            "name": output.get("hts_kor_isnm", ""),
-            "current_price": int(output.get("stck_prpr", 0)),
+            "name": output.get("stk_nm", ""),
+            "current_price": int(output.get("cur_prc", output.get("stck_prpr", 0))),
             "change": int(output.get("prdy_vrss", 0)),
             "change_rate": float(output.get("prdy_ctrt", 0)),
             "volume": int(output.get("acml_vol", 0)),
-            "high": int(output.get("stck_hgpr", 0)),
-            "low": int(output.get("stck_lwpr", 0)),
-            "open": int(output.get("stck_oprc", 0)),
+            "high": int(output.get("stck_hgpr", output.get("high_prc", 0))),
+            "low": int(output.get("stck_lwpr", output.get("low_prc", 0))),
+            "open": int(output.get("stck_oprc", output.get("open_prc", 0))),
         }
 
     def get_orderbook(self, stock_code):
@@ -97,62 +110,61 @@ class KiwoomAPI:
         :param stock_code: 종목코드
         :return: 매수/매도 호가 리스트
         """
-        tr_id = "FHKST01010200"
         params = {
-            "FID_COND_MRKT_DIV_CODE": "J",
-            "FID_INPUT_ISCD": stock_code,
+            "stk_cd": stock_code,
         }
-        data = self._get("/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn", tr_id, params)
-        output = data.get("output1", {})
+        data = self._get("/api/dostk/hogainfo", "ka10002", params)
+        output = data.get("output", data)
 
         asks = []
         bids = []
         for i in range(1, 11):
-            asks.append({
-                "price": int(output.get(f"askp{i}", 0)),
-                "volume": int(output.get(f"askp_rsqn{i}", 0)),
-            })
-            bids.append({
-                "price": int(output.get(f"bidp{i}", 0)),
-                "volume": int(output.get(f"bidp_rsqn{i}", 0)),
-            })
+            ask_price = output.get(f"askp{i}", output.get(f"sell_hoga{i}", 0))
+            ask_vol = output.get(f"askp_rsqn{i}", output.get(f"sell_hoga_qty{i}", 0))
+            bid_price = output.get(f"bidp{i}", output.get(f"buy_hoga{i}", 0))
+            bid_vol = output.get(f"bidp_rsqn{i}", output.get(f"buy_hoga_qty{i}", 0))
+            asks.append({"price": int(ask_price), "volume": int(ask_vol)})
+            bids.append({"price": int(bid_price), "volume": int(bid_vol)})
         return {"asks": asks, "bids": bids}
 
     def get_daily_prices(self, stock_code, period="D", count=60):
         """
-        일봉/주봉/월봉 데이터 조회
+        일봉/분봉 데이터 조회 (ka10080: 분봉, ka10081: 일봉)
         :param stock_code: 종목코드
-        :param period: D(일), W(주), M(월)
+        :param period: D(일봉), 1(1분봉), 3(3분봉), 5(5분봉) 등
         :param count: 조회 개수
         :return: OHLCV 리스트
         """
-        tr_id = "FHKST01010400"
-        params = {
-            "FID_COND_MRKT_DIV_CODE": "J",
-            "FID_INPUT_ISCD": stock_code,
-            "FID_PERIOD_DIV_CODE": period,
-            "FID_ORG_ADJ_PRC": "0",  # 수정주가 반영
-        }
-        data = self._get("/uapi/domestic-stock/v1/quotations/inquire-daily-price", tr_id, params)
+        if period == "D":
+            api_id = "ka10081"
+            params = {
+                "stk_cd": stock_code,
+            }
+        else:
+            api_id = "ka10080"
+            params = {
+                "stk_cd": stock_code,
+                "tic_scope": period,
+            }
+
+        data = self._get("/api/dostk/chart", api_id, params)
+        items = data.get("output", data.get("data", []))
+        if isinstance(items, dict):
+            items = items.get("list", [])
+
         prices = []
-        for item in data.get("output", [])[:count]:
+        for item in items[:count]:
             prices.append({
-                "date": item.get("stck_bsop_date", ""),
-                "open": int(item.get("stck_oprc", 0)),
-                "high": int(item.get("stck_hgpr", 0)),
-                "low": int(item.get("stck_lwpr", 0)),
-                "close": int(item.get("stck_clpr", 0)),
-                "volume": int(item.get("acml_vol", 0)),
+                "date": item.get("date", item.get("stck_bsop_date", "")),
+                "open": int(item.get("open_prc", item.get("stck_oprc", 0))),
+                "high": int(item.get("high_prc", item.get("stck_hgpr", 0))),
+                "low": int(item.get("low_prc", item.get("stck_lwpr", 0))),
+                "close": int(item.get("close_prc", item.get("stck_clpr", 0))),
+                "volume": int(item.get("acml_vol", item.get("vol", 0))),
             })
         return list(reversed(prices))
 
     # ─── 주문 ───────────────────────────────────────────────
-
-    def _order_tr_id(self, side):
-        """주문 TR_ID (모의투자/실전 분기)"""
-        if self.config.IS_PAPER_TRADING:
-            return "VTTC0802U" if side == "buy" else "VTTC0801U"
-        return "TTTC0802U" if side == "buy" else "TTTC0801U"
 
     def buy(self, stock_code, qty, price=0, order_type="00"):
         """
@@ -160,22 +172,21 @@ class KiwoomAPI:
         :param stock_code: 종목코드
         :param qty: 수량
         :param price: 주문가격 (0이면 시장가)
-        :param order_type: 00(지정가), 01(시장가), 02(조건부지정가)
+        :param order_type: 00(지정가), 01(시장가)
         :return: 주문 결과
         """
         if price == 0:
             order_type = "01"
 
-        tr_id = self._order_tr_id("buy")
         body = {
-            "CANO": self.config.cano,
-            "ACNT_PRDT_CD": self.config.acnt_prdt_cd,
-            "PDNO": stock_code,
-            "ORD_DVSN": order_type,
-            "ORD_QTY": str(qty),
-            "ORD_UNPR": str(price),
+            "account": self.config.ACCOUNT_NO,
+            "stk_cd": stock_code,
+            "order_type": order_type,
+            "qty": str(qty),
+            "price": str(price),
+            "side": "buy",
         }
-        return self._post("/uapi/domestic-stock/v1/trading/order-cash", tr_id, body)
+        return self._post("/api/dostk/order", "ka20001", body)
 
     def sell(self, stock_code, qty, price=0, order_type="00"):
         """
@@ -189,16 +200,15 @@ class KiwoomAPI:
         if price == 0:
             order_type = "01"
 
-        tr_id = self._order_tr_id("sell")
         body = {
-            "CANO": self.config.cano,
-            "ACNT_PRDT_CD": self.config.acnt_prdt_cd,
-            "PDNO": stock_code,
-            "ORD_DVSN": order_type,
-            "ORD_QTY": str(qty),
-            "ORD_UNPR": str(price),
+            "account": self.config.ACCOUNT_NO,
+            "stk_cd": stock_code,
+            "order_type": order_type,
+            "qty": str(qty),
+            "price": str(price),
+            "side": "sell",
         }
-        return self._post("/uapi/domestic-stock/v1/trading/order-cash", tr_id, body)
+        return self._post("/api/dostk/order", "ka20001", body)
 
     # ─── 잔고/계좌 조회 ─────────────────────────────────────
 
@@ -207,44 +217,32 @@ class KiwoomAPI:
         계좌 잔고 조회
         :return: 보유종목 리스트 + 예수금 정보
         """
-        tr_id = "VTTC8434R" if self.config.IS_PAPER_TRADING else "TTTC8434R"
         params = {
-            "CANO": self.config.cano,
-            "ACNT_PRDT_CD": self.config.acnt_prdt_cd,
-            "AFHR_FLPR_YN": "N",
-            "OFL_YN": "",
-            "INQR_DVSN": "02",
-            "UNPR_DVSN": "01",
-            "FUND_STTL_ICLD_YN": "N",
-            "FNCG_AMT_AUTO_RDPT_YN": "N",
-            "PRCS_DVSN": "01",
-            "CTX_AREA_FK100": "",
-            "CTX_AREA_NK100": "",
+            "account": self.config.ACCOUNT_NO,
         }
-        data = self._get("/uapi/domestic-stock/v1/trading/inquire-balance", tr_id, params)
+        data = self._get("/api/dostk/acntinfo", "ka30001", params)
+        output = data.get("output", data)
 
         holdings = []
-        for item in data.get("output1", []):
-            if int(item.get("hldg_qty", 0)) > 0:
+        stock_list = output.get("holdings", output.get("stock_list", []))
+        for item in stock_list:
+            qty = int(item.get("hldg_qty", item.get("qty", 0)))
+            if qty > 0:
                 holdings.append({
-                    "stock_code": item.get("pdno", ""),
-                    "name": item.get("prdt_name", ""),
-                    "qty": int(item.get("hldg_qty", 0)),
-                    "avg_price": int(float(item.get("pchs_avg_pric", 0))),
-                    "current_price": int(item.get("prpr", 0)),
-                    "profit_loss": int(item.get("evlu_pfls_amt", 0)),
-                    "profit_rate": float(item.get("evlu_pfls_rt", 0)),
+                    "stock_code": item.get("stk_cd", item.get("pdno", "")),
+                    "name": item.get("stk_nm", item.get("prdt_name", "")),
+                    "qty": qty,
+                    "avg_price": int(float(item.get("avg_prc", item.get("pchs_avg_pric", 0)))),
+                    "current_price": int(item.get("cur_prc", item.get("prpr", 0))),
+                    "profit_loss": int(item.get("evlu_pfls_amt", item.get("pl_amt", 0))),
+                    "profit_rate": float(item.get("evlu_pfls_rt", item.get("pl_rt", 0))),
                 })
-
-        account_info = data.get("output2", [{}])
-        if isinstance(account_info, list) and account_info:
-            account_info = account_info[0]
 
         return {
             "holdings": holdings,
-            "total_eval": int(account_info.get("tot_evlu_amt", 0)),
-            "total_profit": int(account_info.get("evlu_pfls_smtl_amt", 0)),
-            "cash": int(account_info.get("dnca_tot_amt", 0)),
+            "total_eval": int(output.get("tot_evlu_amt", output.get("total_eval", 0))),
+            "total_profit": int(output.get("evlu_pfls_smtl_amt", output.get("total_pl", 0))),
+            "cash": int(output.get("dnca_tot_amt", output.get("deposit", 0))),
         }
 
     def get_order_history(self):
@@ -252,34 +250,24 @@ class KiwoomAPI:
         당일 주문 내역 조회
         :return: 주문 리스트
         """
-        tr_id = "VTTC8001R" if self.config.IS_PAPER_TRADING else "TTTC8001R"
         params = {
-            "CANO": self.config.cano,
-            "ACNT_PRDT_CD": self.config.acnt_prdt_cd,
-            "INQR_STRT_DT": "",
-            "INQR_END_DT": "",
-            "SLL_BUY_DVSN_CD": "00",
-            "INQR_DVSN": "00",
-            "PDNO": "",
-            "CCLD_DVSN": "00",
-            "ORD_GNO_BRNO": "",
-            "ODNO": "",
-            "INQR_DVSN_3": "00",
-            "INQR_DVSN_1": "",
-            "CTX_AREA_FK100": "",
-            "CTX_AREA_NK100": "",
+            "account": self.config.ACCOUNT_NO,
         }
-        data = self._get("/uapi/domestic-stock/v1/trading/inquire-daily-ccld", tr_id, params)
+        data = self._get("/api/dostk/orderinfo", "ka30002", params)
         orders = []
-        for item in data.get("output1", []):
+        items = data.get("output", data.get("data", []))
+        if isinstance(items, dict):
+            items = items.get("list", [])
+
+        for item in items:
             orders.append({
-                "order_no": item.get("odno", ""),
-                "stock_code": item.get("pdno", ""),
-                "name": item.get("prdt_name", ""),
-                "side": "매수" if item.get("sll_buy_dvsn_cd") == "02" else "매도",
-                "qty": int(item.get("ord_qty", 0)),
-                "price": int(item.get("ord_unpr", 0)),
-                "executed_qty": int(item.get("tot_ccld_qty", 0)),
-                "status": item.get("ord_dvsn_name", ""),
+                "order_no": item.get("odno", item.get("order_no", "")),
+                "stock_code": item.get("stk_cd", item.get("pdno", "")),
+                "name": item.get("stk_nm", item.get("prdt_name", "")),
+                "side": "매수" if item.get("side", item.get("sll_buy_dvsn_cd", "")) in ("buy", "02") else "매도",
+                "qty": int(item.get("qty", item.get("ord_qty", 0))),
+                "price": int(item.get("price", item.get("ord_unpr", 0))),
+                "executed_qty": int(item.get("executed_qty", item.get("tot_ccld_qty", 0))),
+                "status": item.get("status", item.get("ord_dvsn_name", "")),
             })
         return orders
